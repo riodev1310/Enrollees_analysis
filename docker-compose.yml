@@ -1,0 +1,18 @@
+services:
+  postgres:
+    container_name: lms_pipeline
+    image: postgres
+    environment:
+      POSTGRES_USER: vietanlms
+      POSTGRES_PASSWORD: lmspipeline
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - 5435:5432
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  pgadmin:
+  mongo:
