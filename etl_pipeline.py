@@ -1,12 +1,15 @@
 import psycopg2
 import pandas as pd
 from sqlalchemy import create_engine
-import pymysql
+import requests
+import psycopg2
+from bs4 import BeautifulSoup
+from sqlalchemy import create_engine
 
 db_params = {
     "host": "localhost",
     "port": "5435",
-    "database": "pipeline",
+    "database": "courses_analysis",
     "user": "vietanlms",
     "password": "lmspipeline"
 }
@@ -66,7 +69,58 @@ def load_csv_data(link):
         if conn:
             conn.close()
 
+def connect_to_db(db_params):
+    print("Connecting to PostgreSQL...")
+    conn = psycopg2.connect(**db_params)
+    return conn
 
+
+def load_data_from_web(url):
+    try:
+        print("Fetching data from website...")
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        table = soup.find('table')
+        
+        data = []
+        for row in table.find_all('tr')[1:]:
+            cols = row.find_all('td')
+            city = cols[0].text.strip()
+            index = float(cols[1].text.strip())
+            data.append({'City': city, 'City Development Index': index})
+        
+        df = pd.DataFrame(data)
+        
+        conn = connect_to_db(db_params)
+        cursor = conn.cursor()
+        
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS city_development_index (
+            id SERIAL PRIMARY KEY,
+            city TEXT NOT NULL,
+            development_index FLOAT NOT NULL
+        );
+        """
+        cursor.execute(create_table_query)
+        conn.commit()
+        
+        insert_query = "INSERT INTO city_development_index (city, development_index) VALUES (%s, %s)"
+        cursor.executemany(insert_query, [(row['City'], row['City Development Index']) for _, row in df.iterrows()])
+        conn.commit()
+        
+        print("City Development Index data added successfully!!!")
+    except Exception as e:
+        print(f"Error during connection: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+            
+            
+            
 def load_excel_data(file_path):
     try:
         data = pd.read_excel(file_path)
@@ -140,8 +194,22 @@ def load_employment(table):
             conn.close()
 
 
+def load_advertisement_metrics():
+    # Kết nối đến PostgreSQL
+    engine = create_engine(f"postgresql://{db_params['user']}:{db_params['password']}@{db_params['host']}:{db_params['port']}/{db_params['database']}")
+
+    # Tạo bảng và lưu dữ liệu
+    table_name = "advertisement_metrics"
+    campaign_df_1000 = pd.read_csv("Advertisement_Metrics.csv")
+    campaign_df_1000.to_sql(table_name, engine, if_exists="replace", index=False)
+
+    print(f"Dữ liệu đã được lưu vào bảng {table_name} trong PostgreSQL.")
+    
+
 load_data_from_google_sheet("1VCkHwBjJGRJ21asd9pxW4_0z2PWuKhbLR3gUHm-p4GI", "enrollies")
 load_csv_data("https://raw.githubusercontent.com/riodev1310/rio_datasets/refs/heads/main/work_experience.csv")
 load_excel_data("enrollies_education.xlsx")
 load_training_hours("training_hours")
+load_data_from_web("https://sca-programming-school.github.io/city_development_index/index.html")
 load_employment("employment")
+load_advertisement_metrics()
